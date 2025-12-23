@@ -1,0 +1,55 @@
+name: Build Windows installer
+
+on:
+  workflow_dispatch: {}
+
+jobs:
+  build-windows:
+    name: Build Windows NSIS installer
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build production bundle (vite)
+        run: npm run build
+
+      - name: Create Windows installer with electron-builder
+        run: npm run dist:electron
+
+      - name: List produced files
+        run: dir /s
+
+      - name: Create a zip of produced artifacts
+        shell: powershell
+        run: |
+          $out = "artifact-windows.zip"
+          if (Test-Path dist) { Compress-Archive -Path dist\* -DestinationPath $out -Force }
+          if (Test-Path release) { Compress-Archive -Path release\* -DestinationPath $out -Update }
+          if (-not (Test-Path $out)) { Write-Error "No artifacts found to zip."; exit 1 }
+
+      - name: Compute SHA256 checksum
+        shell: powershell
+        run: |
+          $zip = "artifact-windows.zip"
+          $hash = Get-FileHash -Path $zip -Algorithm SHA256
+          $hash.Hash | Out-File -FilePath artifact-windows.zip.sha256 -Encoding ASCII
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-installer
+          path: |
+            artifact-windows.zip
+            artifact-windows.zip.sha256
+            dist/**
+            release/**

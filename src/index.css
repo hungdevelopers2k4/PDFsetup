@@ -1,0 +1,14 @@
+[data-rbd-droppable-id] {
+  min-height: 170px;
+}
+
+[data-rbd-drag-handle-context-id] {
+  transition: transform 0.2s ease, opacity 0.2s ease;
+}
+
+[data-rbd-placeholder-context-id] {
+  background-color: rgba(59, 130, 246, 0.1);
+  border: 2px dashed #3b82f6;
+  border-radius: 0.5rem;
+}
+@import "tailwindcss";
