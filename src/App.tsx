@@ -5,7 +5,7 @@ import { Header } from './components/Header';
 import { Workspace } from './components/Workspace';
 import { PreviewPanel } from './components/PreviewPanel';
 import { usePDFStore } from './context/PDFContext';
-import { Save, AlertCircle, CheckCircle2, Loader2, X, Download, FileText, SearchCode, FolderTree, FileSpreadsheet, FileOutput, MapPin, FolderCheck, Trash2, ShieldCheck, Info, ChevronDown, ChevronUp, AlertTriangle, Filter, CheckCircle, Package } from 'lucide-react';
+import { Save, AlertCircle, CheckCircle2, Loader2, X, Download, FileText, SearchCode, FolderTree, FileSpreadsheet, FileOutput, MapPin, FolderCheck, Trash2, ShieldCheck, Info, ChevronDown, ChevronUp, AlertTriangle, Filter, CheckCircle, Package, StickyNote, MessageSquareWarning } from 'lucide-react';
 import { exportDocumentToPDF, SequenceResult, collectReportData, ExcelReportRow, exportToExcel } from './utils/utils';
 
 const App: React.FC = () => {
@@ -26,7 +26,7 @@ const App: React.FC = () => {
   const [excelProgress, setExcelProgress] = useState({ current: 0, total: 0, name: '' });
   const [checkerGroups, setCheckerGroups] = useState<Record<string, SequenceResult[]> | null>(null);
   const [showOnlyErrors, setShowOnlyErrors] = useState(false);
-  const [fileListToSave, setFileListToSave] = useState<{id: string, name: string, workspace: string}[]>([]);
+  const [fileListToSave, setFileListToSave] = useState<{id: string, name: string, workspace: string, isNote?: boolean}[]>([]);
 
   // @ts-ignore
   const isFileSystemApiSupported = typeof window.showDirectoryPicker === 'function';
@@ -54,10 +54,19 @@ const App: React.FC = () => {
     };
   }, [checkerGroups]);
 
+  const emptyNoteIds = useMemo(() => {
+    const allDocs = [...state.documents, ...state.secondaryDocuments];
+    return new Set(
+      allDocs
+        .filter(d => d.isNote && (!d.noteContent || d.noteContent.trim() === ''))
+        .map(d => d.id)
+    );
+  }, [state.documents, state.secondaryDocuments]);
+
   useEffect(() => {
     if (showSaveConfirm) {
-      const mainFiles = state.documents.map(d => ({ id: d.id, name: d.name, workspace: 'Main' }));
-      const secondaryFiles = state.secondaryDocuments.map(d => ({ id: d.id, name: d.name, workspace: 'Secondary' }));
+      const mainFiles = state.documents.map(d => ({ id: d.id, name: d.name, workspace: 'Main', isNote: d.isNote }));
+      const secondaryFiles = state.secondaryDocuments.map(d => ({ id: d.id, name: d.name, workspace: 'Secondary', isNote: d.isNote }));
       setFileListToSave([...mainFiles, ...secondaryFiles]);
     }
   }, [showSaveConfirm, state.documents, state.secondaryDocuments]);
@@ -69,17 +78,38 @@ const App: React.FC = () => {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const isCmdOrCtrl = e.ctrlKey || e.metaKey;
-      const key = e.key.toLowerCase();
       const target = e.target as HTMLElement;
       const isTyping = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable;
+      
       if (isCmdOrCtrl) {
-        if (key === 'a' && !isTyping) { e.preventDefault(); dispatch({ type: 'SELECT_ALL_PAGES' }); }
-        if (key === 'b') { e.preventDefault(); dispatch({ type: 'SPLIT_SELECTED_PAGES' }); }
-        if (key === 'z') { e.preventDefault(); if (e.shiftKey) dispatch({ type: 'REDO' }); else dispatch({ type: 'UNDO' }); }
-        if (key === 'y') { e.preventDefault(); dispatch({ type: 'REDO' }); }
-        if (key === 's') { e.preventDefault(); setShowSaveConfirm(true); }
+        // Sử dụng e.code để tránh xung đột layout bàn phím và nhạy hơn
+        if (e.code === 'KeyA' && !isTyping) { 
+          e.preventDefault(); 
+          dispatch({ type: 'SELECT_ALL_PAGES' }); 
+        }
+        if (e.code === 'KeyB' && !isTyping) { 
+          e.preventDefault(); 
+          dispatch({ type: 'SPLIT_SELECTED_PAGES' }); 
+        }
+        if (e.code === 'KeyZ') { 
+          if (!isTyping) {
+            e.preventDefault(); 
+            if (e.shiftKey) dispatch({ type: 'REDO' }); else dispatch({ type: 'UNDO' }); 
+          }
+        }
+        if (e.code === 'KeyY' && !isTyping) { 
+          e.preventDefault(); 
+          dispatch({ type: 'REDO' }); 
+        }
+        if (e.code === 'KeyS' && !isTyping) { 
+          e.preventDefault(); 
+          setShowSaveConfirm(true); 
+        }
       }
-      if ((e.key === 'Delete' || e.key === 'Backspace') && !isTyping) dispatch({ type: 'DELETE_SELECTED_PAGES' });
+
+      if ((e.code === 'Delete' || e.code === 'Backspace') && !isTyping) {
+        dispatch({ type: 'DELETE_SELECTED_PAGES' });
+      }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
@@ -147,7 +177,6 @@ const App: React.FC = () => {
       const data = await collectReportData(files, (current, total, name) => {
         setExcelProgress({ current, total, name });
       });
-      // Tự động tải xuống sau khi xử lý xong
       if (data && data.length > 0) {
         exportToExcel(data);
       } else {
@@ -164,6 +193,12 @@ const App: React.FC = () => {
   const handleSave = async () => {
     const totalDocsCount = fileListToSave.length;
     if (totalDocsCount === 0) return;
+
+    if (emptyNoteIds.size > 0) {
+      setErrorMessage("Có tệp Ghi chú đang trống. Vui lòng nhập nội dung trước khi lưu.");
+      setSaveStatus('error');
+      return;
+    }
     
     setIsSaving(true);
     setSaveStatus('idle');
@@ -187,7 +222,10 @@ const App: React.FC = () => {
 
         for (let i = 0; i < fileListToSave.length; i++) {
           const fileInfo = fileListToSave[i];
-          const fileName = fileInfo.name.endsWith('.pdf') ? fileInfo.name : `${fileInfo.name}.pdf`;
+          const doc = allDocs.find(d => d.id === fileInfo.id);
+          if (!doc) continue;
+
+          const fileName = fileInfo.name;
           
           setSaveProgress({ current: i + 1, total: totalDocsCount, name: fileName, action: 'Removing existing file...' });
           
@@ -196,32 +234,41 @@ const App: React.FC = () => {
             await new Promise(r => setTimeout(r, 50));
           } catch (e) {}
           
-          setSaveProgress(prev => ({ ...prev, action: 'Encoding document...' }));
-          const doc = allDocs.find(d => d.id === fileInfo.id);
-          if (!doc) continue;
-          
-          const pdfBytes = await exportDocumentToPDF(doc);
-          
-          setSaveProgress(prev => ({ ...prev, action: 'Writing fresh copy...' }));
           const fileHandle = await dirHandle.getFileHandle(fileName, { create: true });
           const writable = await fileHandle.createWritable();
-          await writable.write(pdfBytes);
+
+          if (doc.isNote) {
+            setSaveProgress(prev => ({ ...prev, action: 'Writing text content...' }));
+            const blob = new Blob([doc.noteContent || ''], { type: 'text/plain;charset=utf-8' });
+            await writable.write(blob);
+          } else {
+            setSaveProgress(prev => ({ ...prev, action: 'Encoding PDF document...' }));
+            const pdfBytes = await exportDocumentToPDF(doc);
+            await writable.write(pdfBytes);
+          }
+          
           await writable.close();
         }
       } else {
         for (let i = 0; i < fileListToSave.length; i++) {
           const fileInfo = fileListToSave[i];
-          setSaveProgress({ current: i + 1, total: totalDocsCount, name: fileInfo.name, action: 'Downloading...' });
-          
           const doc = allDocs.find(d => d.id === fileInfo.id);
           if (!doc) continue;
+
+          setSaveProgress({ current: i + 1, total: totalDocsCount, name: fileInfo.name, action: 'Downloading...' });
           
-          const pdfBytes = await exportDocumentToPDF(doc);
-          const blob = new Blob([pdfBytes.buffer as ArrayBuffer], { type: 'application/pdf' });
+          let blob: Blob;
+          if (doc.isNote) {
+            blob = new Blob([doc.noteContent || ''], { type: 'text/plain;charset=utf-8' });
+          } else {
+            const pdfBytes = await exportDocumentToPDF(doc);
+            blob = new Blob([pdfBytes.buffer as ArrayBuffer], { type: 'application/pdf' });
+          }
+
           const url = URL.createObjectURL(blob);
           const a = document.createElement('a');
           a.href = url;
-          a.download = fileInfo.name.endsWith('.pdf') ? fileInfo.name : `${fileInfo.name}.pdf`;
+          a.download = fileInfo.name;
           document.body.appendChild(a);
           a.click();
           document.body.removeChild(a);
@@ -247,6 +294,7 @@ const App: React.FC = () => {
   };
 
   const canSave = state.documents.length > 0 || state.secondaryDocuments.length > 0;
+  const hasEmptyNotesToBlock = emptyNoteIds.size > 0;
 
   return (
     <div className="flex flex-col h-screen w-screen overflow-hidden bg-gray-50 text-gray-900">
@@ -255,42 +303,40 @@ const App: React.FC = () => {
       <div ref={containerRef} className="flex flex-1 overflow-hidden relative">
         <DragDropContext onDragEnd={onDragEnd}>
           <div className="flex flex-1 overflow-hidden h-full">
-            <div style={{ width: state.secondaryScreenOpen ? `${workspaceSplit}%` : '100%', flex: state.secondaryScreenOpen ? 'none' : '1' }} className="flex flex-col min-w-[200px] relative h-full transition-[width] duration-75 ease-out">
+            <div style={{ width: state.secondaryScreenOpen ? `${workspaceSplit}%` : '100%', flex: state.secondaryScreenOpen ? 'none' : '1' }} className="flex flex-col min-w-52 relative h-full transition-[width] duration-75 ease-out">
               <Workspace id="workspace-main" documents={state.documents} title="Main Workspace" />
             </div>
             {state.secondaryScreenOpen && (
               <>
-                <div onMouseDown={(e) => { e.preventDefault(); setResizingType('split'); }} className="group relative w-1.5 cursor-col-resize z-[60] bg-gray-200 hover:bg-blue-500 transition-colors">
+                <div onMouseDown={(e) => { e.preventDefault(); setResizingType('split'); }} className="group relative w-1.5 cursor-col-resize z-60 bg-gray-200 hover:bg-blue-500 transition-colors">
                   <div className="absolute inset-y-0 -left-2 -right-2 z-10" />
                   <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-0.5 bg-gray-400 opacity-30 group-hover:opacity-100" />
                 </div>
-                <div className="flex-1 flex flex-col min-w-[200px] relative h-full">
+                <div className="flex-1 flex flex-col min-w-52 relative h-full">
                   <Workspace id="workspace-secondary" documents={state.secondaryDocuments} title="Secondary Screen" isSecondary />
                 </div>
               </>
             )}
           </div>
         </DragDropContext>
-        <div onMouseDown={(e) => { e.preventDefault(); setResizingType('preview'); }} className="group relative w-1.5 cursor-col-resize z-[60] bg-gray-200 hover:bg-blue-500 transition-colors border-l border-gray-300">
+  <div onMouseDown={(e) => { e.preventDefault(); setResizingType('preview'); }} className="group relative w-1.5 cursor-col-resize z-60 bg-gray-200 hover:bg-blue-500 transition-colors border-l border-gray-300">
              <div className="absolute inset-y-0 -left-2 -right-2 z-10" />
              <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-0.5 bg-gray-400 opacity-30 group-hover:opacity-100" />
         </div>
-        <div style={{ width: previewWidth }} className="flex-shrink-0 min-w-[200px] bg-white h-full border-l border-gray-200">
+        <div style={{ width: previewWidth }} className="shrink-0 min-w-52 bg-white h-full border-l border-gray-200">
           <PreviewPanel />
         </div>
       </div>
 
-      {/* Sequence Checker Modal - GROUPED TABLE UI */}
       {checkerGroups && (
-        <div className="fixed inset-0 z-[150] flex items-center justify-center p-4">
+  <div className="fixed inset-0 z-150 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-gray-950/60 backdrop-blur-sm" onClick={() => setCheckerGroups(null)} />
-          <div className="bg-white rounded-[32px] shadow-2xl w-full max-w-6xl max-h-[92vh] overflow-hidden animate-modal relative flex flex-col border border-gray-100">
-            {/* Modal Header */}
+          <div className="bg-white rounded-4xl shadow-2xl w-full max-w-6xl max-h-[92vh] overflow-hidden animate-modal relative flex flex-col border border-gray-100">
             <div className="p-8 border-b border-gray-100 bg-white shrink-0">
                <button onClick={() => setCheckerGroups(null)} className="absolute top-6 right-6 p-2 hover:bg-gray-100 rounded-full transition-colors text-gray-400"><X size={24}/></button>
                <div className="flex items-center justify-between mb-8">
                  <div className="flex items-center gap-5">
-                   <div className="p-4 bg-amber-500 text-white rounded-[24px] shadow-lg shadow-amber-100"><SearchCode size={36}/></div>
+                   <div className="p-4 bg-amber-500 text-white rounded-3xl shadow-lg shadow-amber-100"><SearchCode size={36}/></div>
                    <div>
                      <h2 className="text-3xl font-black text-gray-900 tracking-tight">Rà soát Dãy số Hồ sơ</h2>
                      <p className="text-sm font-bold text-gray-400 uppercase tracking-widest mt-1">Phát hiện hồ sơ lỗi theo từng Hộp lưu trữ</p>
@@ -308,7 +354,6 @@ const App: React.FC = () => {
                  </div>
                </div>
                
-               {/* Quick Stats Grid */}
                <div className="grid grid-cols-4 gap-4">
                  <div className="bg-gray-50 p-5 rounded-3xl border border-gray-100 flex flex-col gap-1">
                    <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Số lượng Hộp</p>
@@ -329,23 +374,19 @@ const App: React.FC = () => {
                </div>
             </div>
 
-            {/* Grouped Content Area */}
             <div className="flex-1 overflow-auto bg-gray-50 custom-scrollbar p-8">
                <div className="space-y-12">
                  {Object.entries(checkerGroups).map(([groupName, results]) => {
-                    // Filter results per box if showOnlyErrors is active
                     const displayResults = showOnlyErrors 
                       ? results.filter(r => r.missing.length > 0 || !r.hasCover || !r.hasTableOfContents)
                       : results;
 
-                    // If a box has no results to show, skip rendering it
                     if (displayResults.length === 0) return null;
 
                     const boxErrorCount = results.filter(r => r.missing.length > 0 || !r.hasCover || !r.hasTableOfContents).length;
 
                     return (
                       <div key={groupName} className="space-y-4">
-                        {/* Box Header Section */}
                         <div className="flex items-center gap-4 px-2">
                            <div className="p-2.5 bg-gray-900 text-white rounded-xl shadow-lg shadow-gray-200"><Package size={20}/></div>
                            <div>
@@ -356,7 +397,6 @@ const App: React.FC = () => {
                            </div>
                         </div>
 
-                        {/* Individual Table for this Box */}
                         <div className="bg-white rounded-3xl border border-gray-200 shadow-sm overflow-hidden">
                           <table className="w-full text-left border-collapse">
                             <thead>
@@ -426,7 +466,6 @@ const App: React.FC = () => {
                     );
                  })}
 
-                 {/* Empty State when filtering */}
                  {showOnlyErrors && Object.values(checkerGroups).every(results => 
                     results.every(r => r.missing.length === 0 && r.hasCover && r.hasTableOfContents)
                  ) && (
@@ -441,7 +480,6 @@ const App: React.FC = () => {
                </div>
             </div>
 
-            {/* Modal Footer */}
             <div className="p-8 bg-white border-t border-gray-100 text-center shrink-0">
                <button 
                 onClick={() => setCheckerGroups(null)}
@@ -455,7 +493,7 @@ const App: React.FC = () => {
       )}
 
       {isGeneratingExcel && (
-        <div className="fixed inset-0 z-[150] flex items-center justify-center">
+  <div className="fixed inset-0 z-150 flex items-center justify-center">
           <div className="absolute inset-0 bg-gray-900/40 backdrop-blur-sm" />
           <div className="bg-white p-8 rounded-3xl shadow-2xl w-full max-w-md flex flex-col items-center gap-6 animate-modal border border-gray-100 relative z-10">
             <div className="p-5 bg-green-50 text-green-600 rounded-2xl shadow-inner animate-pulse"><FileSpreadsheet size={48} /></div>
@@ -478,8 +516,7 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {/* Persistent Save Button */}
-      <div className="fixed bottom-6 left-6 z-50">
+      <div className="fixed bottom-6 right-6 z-50">
         <button 
           onClick={() => setShowSaveConfirm(true)} 
           disabled={!canSave} 
@@ -493,7 +530,7 @@ const App: React.FC = () => {
       </div>
 
       {showSaveConfirm && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+  <div className="fixed inset-0 z-100 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-gray-950/70 backdrop-blur-md" onClick={() => !isSaving && setShowSaveConfirm(false)} />
           <div className="bg-white rounded-[32px] shadow-2xl w-full max-w-xl overflow-hidden animate-modal relative border border-white/20">
             <button onClick={() => !isSaving && setShowSaveConfirm(false)} className="absolute top-6 right-6 text-gray-400 hover:text-gray-900 transition-colors p-2 hover:bg-gray-100 rounded-full"><X size={20} /></button>
@@ -515,7 +552,7 @@ const App: React.FC = () => {
                   <div className="space-y-2">
                     <h2 className="text-2xl font-black text-gray-900">Batch Processing...</h2>
                     <div className="flex items-center justify-center gap-2">
-                      <span className="px-3 py-1 bg-red-50 text-red-600 text-[10px] font-black rounded-full border border-red-100 animate-pulse">CLEANING & REPLACING</span>
+                      <span className="px-3 py-1 bg-red-50 text-red-600 text-[10px] font-black rounded-full border border-red-100 animate-pulse">SYNCING WORKSPACE</span>
                       <span className="text-[10px] font-black text-gray-400">FILE {saveProgress.current} OF {saveProgress.total}</span>
                     </div>
                     <p className="text-sm font-bold text-blue-600 truncate max-w-[350px] mx-auto mt-4 px-4 bg-blue-50 py-2 rounded-xl">"{saveProgress.name}"</p>
@@ -527,7 +564,7 @@ const App: React.FC = () => {
                   <div className="w-24 h-24 bg-green-100 text-green-600 rounded-full flex items-center justify-center shadow-inner scale-110"><CheckCircle2 size={56} /></div>
                   <div className="space-y-2">
                     <h2 className="text-3xl font-black text-gray-900">Successfully Saved!</h2>
-                    <p className="text-sm text-gray-500 max-w-sm">All files have been successfully written to the folder. Workspaces will now be cleared.</p>
+                    <p className="text-sm text-gray-500 max-w-sm">All files (.pdf & .txt) have been successfully written to the folder.</p>
                   </div>
                 </div>
               ) : saveStatus === 'error' ? (
@@ -545,15 +582,25 @@ const App: React.FC = () => {
                     <div className="p-4 bg-blue-600 text-white rounded-[24px] shadow-xl shadow-blue-100"><FolderCheck size={32} /></div>
                     <div className="flex-1">
                       <h2 className="text-2xl font-black text-gray-900 tracking-tight">Bulk Export Manager</h2>
-                      <p className="text-sm text-gray-500 font-medium">Prepare to sync <span className="text-blue-600 font-bold">{fileListToSave.length} documents</span> to your local system.</p>
+                      <p className="text-sm text-gray-500 font-medium">Prepare to sync <span className="text-blue-600 font-bold">{fileListToSave.length} documents</span> (PDF & Text).</p>
                     </div>
                   </div>
+
+                  {hasEmptyNotesToBlock && (
+                    <div className="bg-red-50 rounded-2xl p-5 border border-red-100 mb-8 flex gap-4 items-start animate-pulse">
+                      <div className="p-2 bg-red-200 text-red-800 rounded-xl shrink-0"><MessageSquareWarning size={20} /></div>
+                      <div className="space-y-1">
+                        <p className="text-xs font-black text-red-800 uppercase tracking-wider">Empty Notes Detected</p>
+                        <p className="text-[11px] text-red-700 leading-relaxed">Bạn không thể lưu workspace khi có tệp Ghi chú đang trống nội dung. Vui lòng đóng cửa sổ này và hoàn tất ghi chú.</p>
+                      </div>
+                    </div>
+                  )}
 
                   <div className="bg-amber-50 rounded-2xl p-5 border border-amber-100 mb-8 flex gap-4 items-start">
                     <div className="p-2 bg-amber-200 text-amber-800 rounded-xl shrink-0"><Trash2 size={20} /></div>
                     <div className="space-y-1">
                       <p className="text-xs font-black text-amber-800 uppercase tracking-wider">Zero-Conflict Replacement</p>
-                      <p className="text-[11px] text-amber-700 leading-relaxed">The application will automatically <strong>delete</strong> existing files in the target folder before writing new ones. This prevents browser-auto-renaming like "(1).pdf".</p>
+                      <p className="text-[11px] text-amber-700 leading-relaxed">The application will automatically <strong>delete</strong> existing files in the target folder before writing new ones. This ensures your workspace stays perfectly in sync.</p>
                     </div>
                   </div>
 
@@ -566,29 +613,41 @@ const App: React.FC = () => {
 
                   <div className="space-y-2 mb-8 max-h-[220px] overflow-y-auto custom-scrollbar pr-2">
                     <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest px-1">File Registry</p>
-                    {fileListToSave.map(file => (
-                      <div key={file.id} className="flex items-center gap-3 bg-gray-50 p-3 rounded-2xl border border-gray-100 group hover:border-blue-200 hover:bg-blue-50/30 transition-all">
-                        <FileText size={18} className="text-red-500 shrink-0" />
-                        <div className="flex-1 min-w-0">
-                          <input 
-                            type="text" 
-                            value={file.name} 
-                            onChange={(e) => updateFileNameInList(file.id, e.target.value)} 
-                            className="w-full text-xs font-black bg-transparent focus:outline-none focus:border-blue-400 border-b border-transparent text-gray-800" 
-                          />
+                    {fileListToSave.map(file => {
+                      const isEmptyNote = emptyNoteIds.has(file.id);
+                      return (
+                        <div key={file.id} className={`flex items-center gap-3 p-3 rounded-2xl border transition-all group ${isEmptyNote ? 'bg-red-50 border-red-200 hover:bg-red-100' : 'bg-gray-50 border-gray-100 hover:border-blue-200 hover:bg-blue-50/30'}`}>
+                          {file.isNote ? <StickyNote size={18} className={isEmptyNote ? "text-red-500 shrink-0" : "text-amber-500 shrink-0"} /> : <FileText size={18} className="text-red-500 shrink-0" />}
+                          <div className="flex-1 min-w-0">
+                            <input 
+                              type="text" 
+                              value={file.name} 
+                              onChange={(e) => updateFileNameInList(file.id, e.target.value)} 
+                              className={`w-full text-xs font-black bg-transparent focus:outline-none focus:border-blue-400 border-b border-transparent ${isEmptyNote ? 'text-red-900' : 'text-gray-800'}`} 
+                            />
+                          </div>
+                          <div className="flex items-center gap-2">
+                            {isEmptyNote && (
+                              <span className="text-[8px] font-black px-1.5 py-0.5 bg-red-600 text-white rounded uppercase shadow-sm flex items-center gap-1">
+                                <AlertCircle size={8} /> TRỐNG
+                              </span>
+                            )}
+                            <span className="text-[9px] font-black px-2 py-0.5 bg-white border border-gray-200 text-gray-400 rounded-lg uppercase shadow-sm">{file.workspace}</span>
+                          </div>
                         </div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-[9px] font-black px-2 py-0.5 bg-white border border-gray-200 text-gray-400 rounded-lg uppercase shadow-sm">{file.workspace}</span>
-                        </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
 
                   <div className="flex gap-4">
                     <button onClick={() => setShowSaveConfirm(false)} className="flex-1 px-4 py-4 bg-gray-100 text-gray-600 rounded-2xl font-black text-sm hover:bg-gray-200 transition-all">Cancel</button>
-                    <button onClick={handleSave} className="flex-[2] px-6 py-4 bg-gray-900 text-white rounded-2xl font-black text-sm hover:bg-black flex items-center justify-center gap-3 shadow-2xl shadow-gray-200 transition-all active:scale-95">
-                      <ShieldCheck size={20} className="text-blue-400" />
-                      AUTHORIZE & SAVE ALL
+                    <button 
+                      onClick={handleSave} 
+                      disabled={hasEmptyNotesToBlock}
+                      className={`flex-[2] px-6 py-4 rounded-2xl font-black text-sm flex items-center justify-center gap-3 shadow-2xl transition-all active:scale-95 ${hasEmptyNotesToBlock ? 'bg-gray-300 text-gray-500 cursor-not-allowed shadow-none' : 'bg-gray-900 text-white hover:bg-black shadow-gray-200'}`}
+                    >
+                      <ShieldCheck size={20} className={hasEmptyNotesToBlock ? "text-gray-400" : "text-blue-400"} />
+                      {hasEmptyNotesToBlock ? 'LỖI GHI CHÚ TRỐNG' : 'AUTHORIZE & SAVE ALL'}
                     </button>
                   </div>
                 </>

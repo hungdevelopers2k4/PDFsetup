@@ -6,7 +6,7 @@
   "main": "electron/boot.cjs",
   "scripts": {
     "dev": "vite",
-    "start": "vite",
+    "start": "node start.js",
     "dev:electron": "concurrently \"npm:dev\" \"wait-on http://localhost:5173 && ELECTRON_DEV=true electron .\"",
     "build": "vite build",
     "preview": "vite preview",
@@ -17,19 +17,19 @@
     "gen-icons": "node scripts/generate-icons.js"
   },
   "dependencies": {
-    "@tailwindcss/postcss": "^4.1.18",
+    "@hello-pangea/dnd": "^18.0.1",
     "@tailwindcss/vite": "^4.1.18",
-    "react": "^19.2.1",
-    "react-dom": "^19.2.1",
+    "lucide-react": "^0.559.0",
     "pdf-lib": "^1.17.1",
     "pdfjs-dist": "^3.11.174",
-    "lucide-react": "^0.559.0",
-    "@hello-pangea/dnd": "^18.0.1",
+    "react": "^19.2.1",
+    "react-dom": "^19.2.1",
     "uuid": "^13.0.0",
     "xlsx": "0.18.5",
     "xlsx-js-style": "1.2.0"
   },
   "devDependencies": {
+    "@tailwindcss/postcss": "^4.1.18",
     "@types/node": "^22.14.0",
     "@vitejs/plugin-react": "^5.0.0",
     "autoprefixer": "^10.4.14",

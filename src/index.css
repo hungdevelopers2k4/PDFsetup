@@ -12,3 +12,7 @@
   border-radius: 0.5rem;
 }
 @import "tailwindcss";
+/* Use Tailwind's directives so PostCSS + tailwindcss plugin can generate
+  utilities (including arbitrary value utilities like min-w-[200px]). */
+@import "tailwindcss/preflight";
+@import "tailwindcss/utilities";

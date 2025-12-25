@@ -3,7 +3,7 @@ import React, { useMemo } from 'react';
 import { Droppable } from '@hello-pangea/dnd';
 import { PDFDocument } from './PDFDocument';
 import { PDFDocument as IPDFDocument } from '../types/types';
-import { Plus, FilePlus, AlertTriangle } from 'lucide-react';
+import { Plus, FilePlus, AlertTriangle, Loader2 } from 'lucide-react';
 import { usePDFStore } from '../context/PDFContext';
 import { getSortValue } from '../utils/utils';
 
@@ -32,28 +32,34 @@ export const Workspace: React.FC<Props> = ({ id, documents, title, isSecondary }
     dispatch({ type: 'SET_FOCUS_WORKSPACE', payload: isSecondary ? 'secondary' : 'main' });
   };
 
+  // Kiểm tra xem có bất kỳ tài liệu nào đang trong quá trình xử lý (isLoading) không
+  const isProcessing = useMemo(() => documents.some(doc => doc.isLoading), [documents]);
+
   // Logic nhận diện các số bị thiếu trong dãy số của tài liệu
   const missingNumbers = useMemo(() => {
-    if (documents.length < 2) return [];
+    // Chỉ rà soát dãy số ở cửa sổ Chính (Main)
+    // KHÔNG hiển thị nếu đang trong quá trình nạp dữ liệu (isProcessing)
+    if (isSecondary || documents.length === 0 || isProcessing) return [];
     
     const sortedNums = documents
       .map(doc => getSortValue(doc.name))
-      .filter(n => n >= 0) // Chỉ xét các file có số thực sự (loại bỏ Bia, Muc luc)
+      .filter(n => n >= 0 && n < 999999) // Bao gồm cả số 0 (n >= 0)
       .sort((a, b) => a - b);
     
     if (sortedNums.length === 0) return [];
 
     const gaps: number[] = [];
-    const min = sortedNums[0];
     const max = sortedNums[sortedNums.length - 1];
 
-    for (let i = min + 1; i < max; i++) {
-      if (!sortedNums.includes(i)) {
+    const numSet = new Set(sortedNums);
+    // Vòng lặp chạy từ 0 đến số lớn nhất hiện có
+    for (let i = 0; i <= max; i++) {
+      if (!numSet.has(i)) {
         gaps.push(i);
       }
     }
     return gaps;
-  }, [documents]);
+  }, [documents, isSecondary, isProcessing]);
 
   const scrollToGap = (missingNum: number) => {
     if (!scrollContainerRef.current) return;
@@ -66,8 +72,8 @@ export const Workspace: React.FC<Props> = ({ id, documents, title, isSecondary }
       if (element) {
         element.scrollIntoView({ behavior: 'smooth', block: 'center' });
         // Hiệu ứng highlight nháy nhẹ
-        element.classList.add('ring-4', 'ring-red-400');
-        setTimeout(() => element.classList.remove('ring-4', 'ring-red-400'), 2000);
+        element.classList.add('ring-4', 'ring-red-400', 'ring-offset-2');
+        setTimeout(() => element.classList.remove('ring-4', 'ring-red-400', 'ring-offset-2'), 2000);
       }
     }
   };
@@ -80,7 +86,7 @@ export const Workspace: React.FC<Props> = ({ id, documents, title, isSecondary }
       <input 
         type="file" 
         multiple 
-        accept="application/pdf" 
+        accept="application/pdf,text/plain" 
         className="hidden" 
         ref={fileInputRef} 
         onChange={onFileChange}
@@ -89,9 +95,14 @@ export const Workspace: React.FC<Props> = ({ id, documents, title, isSecondary }
       <div className="flex items-center justify-between px-4 py-2 bg-gray-200/50 border-b border-gray-200 shrink-0">
         <div className="flex items-center gap-2">
            <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">{isSecondary ? 'Cửa sổ Phụ' : 'Cửa sổ Chính'}</span>
-           {missingNumbers.length > 0 && (
-             <span className="bg-red-100 text-red-600 px-2 py-0.5 rounded-full text-[10px] font-black flex items-center gap-1 animate-pulse">
-               <AlertTriangle size={10} /> THIẾU {missingNumbers.length} SỐ
+           
+           {isProcessing ? (
+             <span className="bg-blue-500 text-white px-2.5 py-0.5 rounded-full text-[10px] font-black flex items-center gap-1 shadow-sm">
+               <Loader2 size={10} className="animate-spin" /> ĐANG XỬ LÝ DỮ LIỆU...
+             </span>
+           ) : missingNumbers.length > 0 && (
+             <span className="bg-red-600 text-white px-2.5 py-0.5 rounded-full text-[10px] font-black flex items-center gap-1 animate-pulse shadow-sm">
+               <AlertTriangle size={10} /> THIẾU {missingNumbers.length} HỒ SƠ
              </span>
            )}
         </div>
@@ -104,20 +115,25 @@ export const Workspace: React.FC<Props> = ({ id, documents, title, isSecondary }
         </button>
       </div>
 
-      {/* Thanh hiển thị các số bị thiếu */}
-      {missingNumbers.length > 0 && (
-        <div className="bg-white border-b border-gray-200 p-2 overflow-x-auto flex items-center gap-2 shrink-0 custom-scrollbar shadow-inner">
-          <span className="text-[10px] font-bold text-gray-400 uppercase tracking-tighter whitespace-nowrap px-2">Dãy thiếu:</span>
-          {missingNumbers.map(num => (
-            <button
-              key={num}
-              onClick={() => scrollToGap(num)}
-              className="px-2 py-1 bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 rounded text-[11px] font-mono font-bold transition-all whitespace-nowrap shringk-100"
-              title={`Nhấn để cuộn đến vị trí số ${num.toString().padStart(3, '0')}`}
-            >
-              {num.toString().padStart(3, '0')}
-            </button>
-          ))}
+      {/* Thanh hiển thị các số bị thiếu - Chỉ hiện khi KHÔNG processing */}
+      {!isProcessing && missingNumbers.length > 0 && (
+        <div className="bg-white border-b border-red-100 p-2.5 overflow-x-auto flex items-center gap-2 shrink-0 custom-scrollbar shadow-inner">
+          <div className="flex items-center gap-2 px-2 shrink-0 border-r border-gray-100 mr-1">
+             <AlertTriangle size={14} className="text-red-500" />
+             <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest whitespace-nowrap">Dãy thiếu:</span>
+          </div>
+          <div className="flex items-center gap-2">
+            {missingNumbers.map(num => (
+              <button
+                key={num}
+                onClick={() => scrollToGap(num)}
+                className="px-2.5 py-1 bg-red-50 hover:bg-red-600 hover:text-white text-red-600 border border-red-200 rounded-md text-[11px] font-mono font-bold transition-all whitespace-nowrap shrink-0 shadow-sm"
+                title={`Nhấn để cuộn đến vị trí số ${num.toString().padStart(3, '0')}`}
+              >
+                {num.toString().padStart(3, '0')}
+              </button>
+            ))}
+          </div>
         </div>
       )}
 

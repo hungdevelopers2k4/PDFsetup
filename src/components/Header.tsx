@@ -14,8 +14,7 @@ import {
   Files,
   FileStack,
   FileSpreadsheet,
-  SortAsc,
-  Image as ImageIcon
+  SortAsc
 } from 'lucide-react';
 import { usePDFStore } from '../context/PDFContext';
 import { analyzeFolderSequences, SequenceResult } from '../utils/utils';
@@ -26,14 +25,13 @@ interface HeaderProps {
 }
 
 export const Header: React.FC<HeaderProps> = ({ onCheckSequences, onGenerateExcel }) => {
-  const { state, dispatch, importFiles, importImages } = usePDFStore();
+  const { state, dispatch, importFiles } = usePDFStore();
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
   const splitMergeInputRef = useRef<HTMLInputElement>(null);
   const checkerInputRef = useRef<HTMLInputElement>(null);
   const excelInputRef = useRef<HTMLInputElement>(null);
-  const imageInputRef = useRef<HTMLInputElement>(null);
 
   const handleSplit = () => dispatch({ type: 'SPLIT_SELECTED_PAGES' });
   const handleDelete = () => dispatch({ type: 'DELETE_SELECTED_PAGES' });
@@ -49,11 +47,6 @@ export const Header: React.FC<HeaderProps> = ({ onCheckSequences, onGenerateExce
     if (target === 'secondary' && !state.secondaryScreenOpen) {
       dispatch({ type: 'TOGGLE_SECONDARY_SCREEN' });
     }
-    e.target.value = '';
-  };
-
-  const onImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    importImages(e.target.files, state.selection.lastFocusedWorkspace);
     e.target.value = '';
   };
 
@@ -80,7 +73,7 @@ export const Header: React.FC<HeaderProps> = ({ onCheckSequences, onGenerateExce
       <input 
         type="file" 
         multiple 
-        accept="application/pdf" 
+        accept="application/pdf,text/plain" 
         className="hidden" 
         ref={fileInputRef} 
         onChange={(e) => onFileChange(e, 'main')}
@@ -98,18 +91,10 @@ export const Header: React.FC<HeaderProps> = ({ onCheckSequences, onGenerateExce
       <input 
         type="file" 
         multiple 
-        accept="application/pdf" 
+        accept="application/pdf,text/plain" 
         className="hidden" 
         ref={splitMergeInputRef} 
         onChange={(e) => onFileChange(e, 'secondary')}
-      />
-      <input 
-        type="file" 
-        multiple 
-        accept="image/*" 
-        className="hidden" 
-        ref={imageInputRef} 
-        onChange={onImageChange}
       />
       <input 
         type="file" 
@@ -146,7 +131,7 @@ export const Header: React.FC<HeaderProps> = ({ onCheckSequences, onGenerateExce
            <button 
              onClick={() => fileInputRef.current?.click()} 
              className="flex items-center gap-2 px-3 py-2 bg-white text-gray-700 hover:bg-gray-50 border border-gray-300 rounded-lg text-xs font-bold transition-all shadow-sm shrink-0"
-             title="Thêm PDF"
+             title="Thêm File (PDF hoặc TXT)"
            >
              <FilePlus size={16} className="text-blue-600" />
              <span className="hidden lg:inline">Thêm File</span>
@@ -159,15 +144,6 @@ export const Header: React.FC<HeaderProps> = ({ onCheckSequences, onGenerateExce
            >
              <FolderOpen size={16} className="text-amber-600" />
              <span className="hidden lg:inline">Mở Thư mục</span>
-           </button>
-
-           <button 
-             onClick={() => imageInputRef.current?.click()} 
-             className="flex items-center gap-2 px-3 py-2 bg-white text-gray-700 hover:bg-gray-50 border border-gray-300 rounded-lg text-xs font-bold transition-all shadow-sm shrink-0"
-             title="Thêm Hình ảnh"
-           >
-             <ImageIcon size={16} className="text-purple-600" />
-             <span className="hidden lg:inline">Thêm Ảnh</span>
            </button>
 
            <button 
